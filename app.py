@@ -1,33 +1,117 @@
+
 import streamlit as st
 import pandas as pd
 import joblib
+from pathlib import Path
 
-# Load the trained machine learning model and its supporting files
-model = joblib.load("LR_heart.pkl")
-scaler = joblib.load("scaler_heart.pkl")
-expected_columns = joblib.load("columns_heart.pkl")
+# --------------------------------------------------
+# 1. Page configuration
+# --------------------------------------------------
+st.set_page_config(
+    page_title="Heart Disease Risk Prediction",
+    page_icon="❤️",
+    layout="centered"
+)
 
-# Page title
+# --------------------------------------------------
+# 2. Load saved artifacts
+# --------------------------------------------------
+@st.cache_resource
+def load_artifacts():
+    base_dir = Path(__file__).resolve().parent
+
+    model = joblib.load(base_dir / "LR_heart.pkl")
+    scaler = joblib.load(base_dir / "scaler.pkl")
+    columns = joblib.load(base_dir / "columns.pkl")
+
+    return model, scaler, columns
+
+
+try:
+    model, scaler, expected_columns = load_artifacts()
+except Exception as exc:
+    st.error(f"Could not load the model files: {exc}")
+    st.stop()
+
+# Exact feature schema from your training data
+EXPECTED_COLUMNS = [
+    "Age",
+    "RestingBP",
+    "Cholesterol",
+    "FastingBS",
+    "MaxHR",
+    "Oldpeak",
+    "Sex_M",
+    "ChestPainType_ATA",
+    "ChestPainType_NAP",
+    "ChestPainType_TA",
+    "RestingECG_Normal",
+    "RestingECG_ST",
+    "ExerciseAngina_Y",
+    "ST_Slope_Flat",
+    "ST_Slope_Up"
+]
+
+NUM_COLS = [
+    "Age",
+    "RestingBP",
+    "Cholesterol",
+    "MaxHR",
+    "Oldpeak"
+]
+
+# Validate saved feature list
+if list(expected_columns) != EXPECTED_COLUMNS:
+    st.error(
+        "The columns.pkl file does not match the expected training schema. "
+        "Please check the saved columns and model artifacts."
+    )
+    st.stop()
+
+if hasattr(scaler, "feature_names_in_"):
+    if list(scaler.feature_names_in_) != NUM_COLS:
+        st.error(
+            "The scaler was not fitted on the expected five numerical "
+            "features. Please verify your training code."
+        )
+        st.stop()
+
+if hasattr(model, "n_features_in_"):
+    if model.n_features_in_ != len(EXPECTED_COLUMNS):
+        st.error(
+            "The saved model does not expect 15 input features. "
+            "Your model and columns file may come from different training runs."
+        )
+        st.stop()
+
+# --------------------------------------------------
+# 3. App introduction
+# --------------------------------------------------
 st.title("❤️ Heart Disease Risk Prediction")
-st.write("Enter the details below to estimate the likelihood of heart disease.")
 
-st.info("This tool is for educational purposes only. It cannot diagnose a medical condition.")
+st.write(
+    "Enter the health measurements below to obtain a prediction "
+    "from the trained machine-learning model."
+)
 
-# 1. Basic information
+st.info(
+    "Educational project only. This application cannot diagnose "
+    "heart disease or replace medical evaluation."
+)
+
+# --------------------------------------------------
+# 4. Collect input
+# --------------------------------------------------
 st.header("1. Basic Information")
 
-age = st.slider("Age (in years)", 18, 100, 40)
+age = st.slider("Age (years)", 18, 100, 40)
 
-sex = st.selectbox(
-    "Sex",
-    ["Male", "Female"]
-)
-sex = {"Male": "M", "Female": "F"}[sex]
+sex_label = st.selectbox("Sex", ["Male", "Female"])
+sex = {"Male": "M", "Female": "F"}[sex_label]
 
-# 2. Heart-related information
 st.header("2. Heart-Related Information")
 
-chest_pain = st.selectbox(
+chest_pain_label = st.selectbox(
     "Type of Chest Pain",
     [
         "Pain during physical activity",
@@ -43,34 +127,35 @@ chest_pain_mapping = {
     "Typical heart-related chest pain": "TA",
     "No chest pain": "ASY"
 }
-chest_pain = chest_pain_mapping[chest_pain]
+chest_pain = chest_pain_mapping[chest_pain_label]
 
 resting_bp = st.number_input(
     "Blood Pressure at Rest (mm Hg)",
-    min_value=80, max_value=200, value=120,
-    help="Blood pressure measured when the body is resting."
+    min_value=80,
+    max_value=200,
+    value=120
 )
 
 cholesterol = st.number_input(
-    "Cholesterol Level (mg/dL)",
-    min_value=100, max_value=600, value=200,
-    help="A measurement of cholesterol in the blood."
+    "Cholesterol (mg/dL)",
+    min_value=100,
+    max_value=600,
+    value=200
 )
 
-fasting_bs = st.selectbox(
-    "Is fasting blood sugar above 120 mg/dL?",
+fasting_bs_label = st.selectbox(
+    "Fasting blood sugar above 120 mg/dL?",
     ["No", "Yes"]
 )
-fasting_bs = {"No": 0, "Yes": 1}[fasting_bs]
+fasting_bs = {"No": 0, "Yes": 1}[fasting_bs_label]
 
-resting_ecg = st.selectbox(
-    "Heart's Electrical Activity (ECG)",
+resting_ecg_label = st.selectbox(
+    "Resting ECG",
     [
         "Normal",
         "ST-T wave changes",
         "Left ventricular hypertrophy"
-    ],
-    help="An ECG records the electrical activity of the heart."
+    ]
 )
 
 resting_ecg_mapping = {
@@ -78,44 +163,47 @@ resting_ecg_mapping = {
     "ST-T wave changes": "ST",
     "Left ventricular hypertrophy": "LVH"
 }
-resting_ecg = resting_ecg_mapping[resting_ecg]
+resting_ecg = resting_ecg_mapping[resting_ecg_label]
 
 max_hr = st.slider(
     "Maximum Heart Rate (beats per minute)",
-    60, 220, 150,
-    help="The highest heart rate recorded during exercise or testing."
+    60, 220, 150
 )
 
-exercise_angina = st.selectbox(
+exercise_angina_label = st.selectbox(
     "Chest Pain During Exercise?",
     ["No", "Yes"]
 )
-exercise_angina = {"No": "N", "Yes": "Y"}[exercise_angina]
+exercise_angina = {"No": "N", "Yes": "Y"}[exercise_angina_label]
 
 oldpeak = st.slider(
-    "ECG Change During Exercise (Oldpeak)",
-    0.0, 6.0, 1.0, step=0.1,
-    help="A numerical measurement of changes in the ECG during exercise."
+    "Oldpeak (ECG change during exercise)",
+    min_value=0.0,
+    max_value=6.0,
+    value=1.0,
+    step=0.1
 )
 
-st_slope = st.selectbox(
-    "ECG Pattern During Exercise",
+st_slope_label = st.selectbox(
+    "ST Slope",
     ["Upward", "Flat", "Downward"]
 )
 
 st_slope_mapping = {
-    "Upward": "UP",
+    "Upward": "Up",
     "Flat": "Flat",
     "Downward": "Down"
 }
-st_slope = st_slope_mapping[st_slope]
+st_slope = st_slope_mapping[st_slope_label]
 
-# 3. Make a prediction
+# --------------------------------------------------
+# 5. Build model input
+# --------------------------------------------------
 st.header("3. Prediction")
 
 if st.button("Predict Heart Disease Risk", type="primary"):
 
-    # Arrange the entered information for the model
+    # Numerical features
     input_data = {
         "Age": age,
         "RestingBP": resting_bp,
@@ -123,37 +211,60 @@ if st.button("Predict Heart Disease Risk", type="primary"):
         "FastingBS": fasting_bs,
         "MaxHR": max_hr,
         "Oldpeak": oldpeak,
-        "Sex_" + sex: 1,
-        "ChestPainType_" + chest_pain: 1,
-        "RestingECG_" + resting_ecg: 1,
-        "ExerciseAngina_" + exercise_angina: 1,
-        "ST_Slope_" + st_slope: 1
+
+        # One-hot encoded categories.
+        # Reference categories are represented by zeros.
+        "Sex_M": int(sex == "M"),
+
+        "ChestPainType_ATA": int(chest_pain == "ATA"),
+        "ChestPainType_NAP": int(chest_pain == "NAP"),
+        "ChestPainType_TA": int(chest_pain == "TA"),
+
+        "RestingECG_Normal": int(resting_ecg == "Normal"),
+        "RestingECG_ST": int(resting_ecg == "ST"),
+
+        "ExerciseAngina_Y": int(exercise_angina == "Y"),
+
+        "ST_Slope_Flat": int(st_slope == "Flat"),
+        "ST_Slope_Up": int(st_slope == "Up")
     }
 
-    # Convert the information into a table
-    input_df = pd.DataFrame([input_data])
-
-    # Add missing model columns with a value of zero
-    for column in expected_columns:
-        if column not in input_df.columns:
-            input_df[column] = 0
-
-    # Arrange columns in the same order used during training
-    input_df = input_df[expected_columns]
-
-    # Prepare the data for the trained model
-    scaled_input = scaler.transform(input_df)
-
-    # Generate the prediction
-    prediction = model.predict(scaled_input)[0]
-
-    # Display the result
-    if prediction == 1:
-        st.error("⚠️ The model indicates a higher likelihood of heart disease.")
-    else:
-        st.success("✅ The model indicates a lower likelihood of heart disease.")
-
-    st.caption(
-        "This is a machine learning estimate, not a medical diagnosis. "
-        "Consult a qualified healthcare professional for medical advice."
+    # Preserve the exact training order and use floating-point
+    # values so scaled decimals can be assigned safely.
+    input_df = pd.DataFrame(
+        [[input_data[col] for col in EXPECTED_COLUMNS]],
+        columns=EXPECTED_COLUMNS,
+        dtype=float
     )
+
+    try:
+        # Scale numerical columns only.
+        # Do not refit the scaler during prediction.
+        input_df[NUM_COLS] = scaler.transform(input_df[NUM_COLS])
+
+        # Predict using the saved model
+        prediction = model.predict(input_df)[0]
+
+        st.subheader("Prediction Result")
+
+        if prediction == 1:
+            st.error(
+                "⚠️ The model predicts the positive heart disease class."
+            )
+        else:
+            st.success(
+                "✅ The model predicts the negative heart disease class."
+            )
+
+        st.caption(
+            "This is an educational machine-learning prediction, "
+            "not a medical diagnosis. Consult a qualified healthcare "
+            "professional for medical advice."
+        )
+
+    except Exception as exc:
+        st.error(f"Prediction failed: {exc}")
+        st.warning(
+            "Check that the model, scaler, and columns were saved "
+            "from the same training run and use the same preprocessing."
+        )
